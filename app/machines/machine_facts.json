@@ -1,0 +1,22 @@
+{
+  "_readme": [
+    "Curated identity facts per machine, keyed by machine number. Loaded by",
+    "app/machines/registry.py and injected into the answering model's context",
+    "as runtime data (see app/rag/machine_context.py). Keys that are not a",
+    "machine number (like this one) are ignored by the loader.",
+    "",
+    "These are IDENTITY facts only - family, size, fitted configuration - the",
+    "things that let the model tell which row of a multi-machine table belongs",
+    "to this machine. Answer values (oil capacities, pressures, setpoints) do",
+    "NOT belong here: those must come from the documents, cited, every time.",
+    "",
+    "The entry below is a made-up example; replace it with your own machines."
+  ],
+  "101": {
+    "family": "PX",
+    "tonnage_tons": 200,
+    "installed_screw_mm": 45,
+    "datasheet_designation": "PX 200/50",
+    "notes": "Example entry. Free-text notes are passed to the model as written."
+  }
+}

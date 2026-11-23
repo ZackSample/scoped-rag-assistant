@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sign in — IMM Troubleshooting Assistant</title>
+    <!-- Served from /login-assets because the login gate blocks /app for
+         anyone without a session, including for stylesheets. -->
+    <link rel="stylesheet" href="/login-assets/styles.css" />
+    <style>
+      /* Scoped to the login page; colors ride the shared tokens from
+         styles.css so the theme choice made in the app applies here too. */
+      .login-wrap {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        box-sizing: border-box;
+      }
+      .login-card {
+        width: 100%;
+        max-width: 380px;
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 32px 28px;
+      }
+      .login-card h1 { font-size: 20px; margin: 0 0 4px; }
+      .login-card .sub { color: var(--muted); font-size: 13px; margin: 0 0 24px; }
+      .login-card label {
+        display: block;
+        font-size: 13px;
+        margin-bottom: 6px;
+        color: var(--text);
+      }
+      .login-card input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 10px 12px;
+        margin-bottom: 16px;
+        background: var(--panel-2);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        color: var(--text);
+        font-size: 15px; /* >=16px avoids iOS zoom-on-focus; 15 is a compromise */
+      }
+      .login-card input:focus { outline: none; border-color: var(--accent-2); }
+      .login-card button {
+        width: 100%;
+        padding: 11px;
+        background: var(--accent);
+        color: var(--on-accent);
+        border: none;
+        border-radius: 6px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .login-card button:hover { filter: brightness(1.1); }
+      .login-card button:disabled { opacity: .6; cursor: default; }
+      .login-error {
+        color: var(--danger);
+        font-size: 13px;
+        margin-bottom: 12px;
+        min-height: 18px;
+      }
+    </style>
+    <script>
+      // Same key app.js uses; applied before first paint so there is no flash.
+      try {
+        document.documentElement.dataset.theme =
+          localStorage.getItem("imm_theme") === "dark" ? "dark" : "light";
+      } catch (err) {
+        document.documentElement.dataset.theme = "light";
+      }
+    </script>
+  </head>
+  <body>
+    <div class="login-wrap">
+      <form class="login-card" id="login-form">
+        <h1>IMM Troubleshooting Assistant</h1>
+        <p class="sub">Sign in to continue</p>
+
+        <div class="login-error" id="login-error"></div>
+
+        <label for="username">Username</label>
+        <input id="username" name="username" autocomplete="username" autocapitalize="none" required />
+
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required />
+
+        <button type="submit" id="login-btn">Sign in</button>
+      </form>
+    </div>
+
+    <script>
+      const form = document.getElementById("login-form");
+      const errorEl = document.getElementById("login-error");
+      const btn = document.getElementById("login-btn");
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        errorEl.textContent = "";
+        btn.disabled = true;
+        btn.textContent = "Signing in...";
+
+        try {
+          const response = await fetch("/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              username: document.getElementById("username").value,
+              password: document.getElementById("password").value,
+            }),
+          });
+          const data = await response.json();
+          if (data.ok) {
+            window.location.href = "/app/";
+            return;
+          }
+          errorEl.textContent = data.error || "Sign in failed.";
+        } catch (err) {
+          errorEl.textContent = "Could not reach the server. Try again in a moment.";
+        }
+        btn.disabled = false;
+        btn.textContent = "Sign in";
+      });
+    </script>
+  </body>
+</html>
