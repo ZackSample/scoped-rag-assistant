@@ -13,6 +13,12 @@ const state = {
   messagesByMachine: {},
   historySessions: [],
   activeCitation: null,
+  // The source viewer: every source of the answer it was opened from (one tab
+  // each), the page being shown, and that document's page count once known.
+  panelSources: [],
+  viewerPage: 1,
+  viewerPageCount: null,
+  machineFilter: "",
   activeContextByMachine: {},
   activityByMachine: {},
   streamingByMachine: {},
@@ -23,7 +29,6 @@ const state = {
   // The live activity panel is collapsed by default; remembering the reader's
   // choice here is what survives the full innerHTML rebuild per stream token.
   activityOpenByMachine: {},
-  citationImageUrl: null,
   citationTextPreview: null,
   currentUser: null,
   zoom: 1,
@@ -154,12 +159,73 @@ function resetStreamingState() {
   delete state.fullSearchModeByMachine[key];
 }
 
+// Small inline icons, so the UI needs no icon font or build step.
+const ICONS = {
+  back: '<path d="M15 18l-6-6 6-6"/>',
+  prev: '<path d="M15 18l-6-6 6-6"/>',
+  next: '<path d="M9 18l6-6-6-6"/>',
+  close: '<path d="M18 6L6 18M6 6l12 12"/>',
+  open: '<path d="M14 3h7v7M10 14L21 3M21 14v7H3V3h7"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  send: '<path d="M12 19V5M5 12l7-7 7 7"/>',
+  search: '<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
+  history: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/>',
+  moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
+  logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
+  up: '<path d="M7 10v11M2 10h5l4-8a3 3 0 0 1 3 3v3h6a2 2 0 0 1 2 2.3l-1.4 8A2 2 0 0 1 18.6 21H7"/>',
+  down: '<path d="M17 14V3M22 14h-5l-4 8a3 3 0 0 1-3-3v-3H4a2 2 0 0 1-2-2.3l1.4-8A2 2 0 0 1 5.4 3H17"/>',
+};
+
+function icon(name, size = 18) {
+  return `<svg class="icon" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
+}
+
+function initials(user) {
+  const parts = String(user?.display_name || user?.username || "?").split(/[\s._-]+/).filter(Boolean);
+  return ((parts[0]?.[0] || "?") + (parts[1]?.[0] || "")).toUpperCase();
+}
+
+function topBar({ eyebrow = "", title, back = false, actions = "" }) {
+  // One bar across the top of every screen: back (or the app mark), what you
+  // are looking at, then actions and who is signed in.
+  const user = state.currentUser;
+  return `
+    <header class="top">
+      ${back ? `<button class="iconbtn" id="top-back" aria-label="Back">${icon("back", 20)}</button>` : `<div class="mark">IMM</div>`}
+      <div class="title">
+        ${eyebrow ? `<small>${escapeHtml(eyebrow)}</small>` : ""}
+        <b>${escapeHtml(title)}</b>
+      </div>
+      <div class="grow"></div>
+      ${actions}
+      ${themeToggleHtml()}
+      ${user ? `<button class="iconbtn" id="sign-out" title="Sign out">${icon("logout")}</button>` : ""}
+      ${user ? `<div class="who" title="${escapeAttr(user.display_name || user.username)}">${escapeHtml(initials(user))}</div>` : ""}
+    </header>
+  `;
+}
+
 function machineSubtitle(machine) {
   return [machine.model, machine.serial ? `Serial ${machine.serial}` : ""].filter(Boolean).join(" | ");
 }
 
-function emptyStateText(machine) {
-  return `Ask a question about Machine ${machine.machine_number}. Answers are scoped to this machine's documents.`;
+const STARTERS = [
+  "How much hydraulic oil does it hold?",
+  "A heater zone won't come up to temperature",
+  "How do I adjust the mold height?",
+  "What is the clamp tonnage and shot size?",
+];
+
+function emptyStateHtml(machine) {
+  return `
+    <div class="hello">
+      <b>What's going on with machine ${escapeHtml(machine.machine_number)}?</b>
+      Answers come from this machine's documents and the shared troubleshooting library.
+      <div class="starters">
+        ${STARTERS.map((text) => `<button type="button" data-starter="${escapeAttr(text)}">${escapeHtml(text)}</button>`).join("")}
+      </div>
+    </div>
+  `;
 }
 
 function startFreshMachineSession(machine) {
@@ -174,7 +240,7 @@ function startFreshMachineSession(machine) {
   delete state.panelStreamByMachine[key];
   delete state.fullSearchModeByMachine[key];
   delete state.activityOpenByMachine[key];
-  state.activeCitation = null;
+  closeViewer();
 }
 
 function wireSignOut() {
@@ -217,38 +283,54 @@ function renderMachineSelector() {
   state.currentView = "machines";
   // The landing page enforces machine choice before chat is available.
   app.innerHTML = `
-    <main class="screen selector-screen">
-      <section class="selector-header">
-        <div>
-          <p class="eyebrow">IMM Troubleshooting Assistant</p>
-          <h1>Which machine are we working with?</h1>
+    <div class="shell">
+      ${topBar({ title: "IMM Troubleshooting Assistant" })}
+      <main class="start">
+        <div class="start-inner">
+          <h1 class="start-title">Which machine are we working with?</h1>
+          <label class="search">
+            ${icon("search", 20)}
+            <input id="machine-filter" value="${escapeAttr(state.machineFilter)}" placeholder="Machine number or model" inputmode="search" autocomplete="off" />
+          </label>
+          <div class="grid" id="machine-grid">${machineTilesHtml()}</div>
         </div>
-        <div class="header-actions">
-          ${state.currentUser ? `<span class="signed-in-as">${escapeHtml(state.currentUser.display_name || state.currentUser.username)}</span>` : ""}
-          ${themeToggleHtml()}
-          ${state.currentUser ? `<button class="ghost" id="sign-out">Sign out</button>` : ""}
-        </div>
-      </section>
-      <section class="machine-grid">
-        ${state.machines.map((machine) => `
-          <button class="machine-card" data-machine="${machine.machine_number}">
-            <span class="machine-number">${machine.machine_number}</span>
-            <span class="machine-model">${machine.model || machine.display_name}</span>
-            ${machine.serial ? `<span class="machine-serial">Serial ${machine.serial}</span>` : ""}
-          </button>
-        `).join("")}
-      </section>
-    </main>
+      </main>
+    </div>
   `;
 
-  document.querySelectorAll("[data-machine]").forEach((button) => {
-    button.addEventListener("click", () => {
-      startFreshMachineSession(state.machines.find((machine) => machine.machine_number === button.dataset.machine));
-      renderChat();
-    });
+  const filter = document.querySelector("#machine-filter");
+  filter.addEventListener("input", () => {
+    // Only the grid is redrawn, so the search box keeps focus while typing.
+    state.machineFilter = filter.value;
+    document.querySelector("#machine-grid").innerHTML = machineTilesHtml();
+  });
+  filter.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") document.querySelector("#machine-grid [data-machine]")?.click();
+  });
+  document.querySelector("#machine-grid").addEventListener("click", (event) => {
+    const tile = event.target.closest("[data-machine]");
+    if (!tile) return;
+    startFreshMachineSession(state.machines.find((machine) => machine.machine_number === tile.dataset.machine));
+    renderChat();
   });
   wireSignOut();
   wireThemeToggle();
+}
+
+function machineTilesHtml() {
+  const needle = state.machineFilter.trim().toLowerCase();
+  const shown = state.machines.filter(
+    (machine) => !needle || [machine.machine_number, machine.model, machine.serial].some((value) => value?.toLowerCase().includes(needle))
+  );
+  if (!shown.length) {
+    return `<p class="empty">${state.machines.length ? `No machine matches "${escapeHtml(state.machineFilter)}".` : "No machine folders found under DOCS_ROOT yet."}</p>`;
+  }
+  return shown.map((machine) => `
+    <button class="tile" data-machine="${escapeAttr(machine.machine_number)}" title="${escapeAttr(machine.model || machine.display_name)}">
+      <b>${escapeHtml(machine.machine_number)}</b>
+      <small>${escapeHtml(machine.model || machine.display_name)}</small>
+    </button>
+  `).join("");
 }
 
 function renderChat() {
@@ -266,52 +348,42 @@ function renderChat() {
 
   const machine = state.activeMachine;
   const messages = machineMessages();
-  const activeContext = getActiveContext();
-  // The citation panel only takes space when a source page is open.
-  const layoutClass = state.activeCitation ? "chat-layout with-panel" : "chat-layout";
+  // The source viewer only takes space when a cited page is open.
+  const layoutClass = state.activeCitation ? "chat with-panel" : "chat";
 
   app.innerHTML = `
-    <main class="screen chat-screen">
-      <header class="chat-header">
-        <div>
-          <p class="eyebrow">Machine ${machine.machine_number}</p>
-          <h1>${machine.display_name}</h1>
-          <div class="muted">${machineSubtitle(machine)}</div>
-        </div>
-        <div class="header-actions">
-          ${state.currentUser ? `<span class="signed-in-as">${escapeHtml(state.currentUser.display_name || state.currentUser.username)}</span>` : ""}
-          ${themeToggleHtml()}
-          <button class="ghost" id="open-history">History</button>
-          <button class="ghost" id="change-machine">Change Machine</button>
-          ${state.currentUser ? `<button class="ghost" id="sign-out">Sign out</button>` : ""}
-        </div>
-      </header>
-      <section class="${layoutClass}">
-        <section class="chat-shell">
-          ${activeContext ? `
-            <section class="context-bar">
-              <span>Follow-ups can use this chat, cited pages, and machine-document search.</span>
-              <button id="new-question">New question</button>
-            </section>
-          ` : ""}
-          <div class="messages" id="messages">
-            <div class="message-stack">
-              ${messages.map((message, index) => renderMessage(message, index === messages.length - 1)).join("") || `<div class="message system">${emptyStateText(machine)}</div>`}
+    <div class="shell chat-screen">
+      ${topBar({
+        eyebrow: `Machine ${machine.machine_number}`,
+        title: machineSubtitle(machine) || machine.display_name,
+        back: true,
+        actions: `
+          <button class="iconbtn" id="open-history" title="History">${icon("history")}<span class="label">History</span></button>
+          <button class="iconbtn" id="new-question" title="New chat">${icon("plus")}<span class="label">New chat</span></button>
+        `,
+      })}
+      <div class="${layoutClass}">
+        <div class="thread-col">
+          <div class="thread" id="messages">
+            <div class="thread-inner">
+              ${messages.map((message, index) => renderMessage(message, index === messages.length - 1, index)).join("") || emptyStateHtml(machine)}
               ${renderLiveActivity()}
               ${renderStreamingAnswer()}
             </div>
           </div>
-          <form class="composer" id="composer">
-            <textarea id="question" rows="1" placeholder="Describe the symptom, alarm, part, or maintenance question..." required></textarea>
-            <button class="primary" type="submit">Ask</button>
-          </form>
-        </section>
-        ${state.activeCitation ? renderArtifactPanel(state.activeCitation) : ""}
-      </section>
-    </main>
+          <div class="composer-wrap">
+            <form class="composer" id="composer">
+              <textarea id="question" rows="1" placeholder="${messages.length ? "Ask a follow-up" : "Describe the symptom, alarm, part or procedure"}" required></textarea>
+              <button class="send" type="submit" aria-label="Ask">${icon("send", 22)}</button>
+            </form>
+          </div>
+        </div>
+        ${state.activeCitation ? renderSourcesPanel() : ""}
+      </div>
+    </div>
   `;
 
-  document.querySelector("#change-machine").addEventListener("click", () => {
+  document.querySelector("#top-back").addEventListener("click", () => {
     clearActivity();
     state.activeMachine = null;
     state.activeCitation = null;
@@ -319,6 +391,12 @@ function renderChat() {
   });
   document.querySelector("#open-history").addEventListener("click", loadHistory);
   wireSignOut();
+  document.querySelectorAll("[data-starter]").forEach((button) => {
+    button.addEventListener("click", () => {
+      document.querySelector("#question").value = button.dataset.starter;
+      document.querySelector("#composer").requestSubmit();
+    });
+  });
   const newQuestion = document.querySelector("#new-question");
   if (newQuestion) {
     newQuestion.addEventListener("click", () => {
@@ -350,11 +428,12 @@ function renderChat() {
       }
     });
   }
-  document.querySelectorAll("[data-citation-id]").forEach((button) => {
-    button.addEventListener("click", () => openCitation(JSON.parse(button.dataset.citation)));
-  });
-  document.querySelectorAll("[data-open-pdf]").forEach((button) => {
-    button.addEventListener("click", () => openPdf(JSON.parse(button.dataset.openPdf)));
+  document.querySelectorAll("[data-citation]").forEach((button) => {
+    button.addEventListener("click", () => {
+      // Open the viewer with every source of that answer as a tab.
+      const sources = machineMessages()[Number(button.dataset.msg)]?.citations;
+      openCitation(JSON.parse(button.dataset.citation), sources);
+    });
   });
   document.querySelectorAll("[data-more-detail]").forEach((button) => {
     button.addEventListener("click", () => askForMoreDetail());
@@ -386,7 +465,7 @@ function renderChat() {
     // sections underneath it - they had to scroll up to read what they asked
     // for, and the more-detail button made that worse.
     state.scrollToNewestAnswer = false;
-    const answers = messagesEl.querySelectorAll(".message.assistant");
+    const answers = messagesEl.querySelectorAll(".a");
     const newest = answers[answers.length - 1];
     if (newest) {
       messagesEl.scrollTop = newest.offsetTop - messagesEl.offsetTop;
@@ -411,31 +490,25 @@ async function loadHistory() {
 function renderHistory() {
   const machine = state.activeMachine;
   app.innerHTML = `
-    <main class="screen selector-screen">
-      <section class="selector-header">
-        <div>
-          <p class="eyebrow">Machine ${machine.machine_number}</p>
-          <h1>Session history</h1>
-          <div class="muted">${machineSubtitle(machine)}</div>
+    <div class="shell">
+      ${topBar({ eyebrow: `Machine ${machine.machine_number}`, title: "Earlier conversations", back: true })}
+      <main class="start">
+        <div class="start-inner">
+          <div class="recent">
+            ${state.historySessions.map((session) => `
+              <button data-session-id="${session.id}">
+                ${escapeHtml(session.title || `Session ${session.id}`)}
+                <small>${session.message_count} messages &middot; ${escapeHtml(session.last_message_at)}</small>
+              </button>
+            `).join("") || `<p class="empty">No saved conversations for this machine yet.</p>`}
+          </div>
         </div>
-        <div class="header-actions">
-          ${themeToggleHtml()}
-          <button class="ghost" id="back-chat">Back to Chat</button>
-        </div>
-      </section>
-      <section class="history-list">
-        ${state.historySessions.map((session) => `
-          <button class="history-row" data-session-id="${session.id}">
-            <span>Session ${session.id}</span>
-            <strong>${session.message_count} messages</strong>
-            <span>${escapeHtml(session.last_message_at)}</span>
-          </button>
-        `).join("") || `<p class="muted">No saved sessions for this machine yet.</p>`}
-      </section>
-    </main>
+      </main>
+    </div>
   `;
 
-  document.querySelector("#back-chat").addEventListener("click", renderChat);
+  document.querySelector("#top-back").addEventListener("click", renderChat);
+  wireSignOut();
   wireThemeToggle();
   document.querySelectorAll("[data-session-id]").forEach((button) => {
     button.addEventListener("click", () => loadSession(button.dataset.sessionId));
@@ -451,7 +524,7 @@ async function loadSession(sessionId) {
   state.activeContextByMachine[key] = lastAssistant?.citations?.length
     ? { citations: lastAssistant.citations, createdAt: new Date().toISOString() }
     : null;
-  state.activeCitation = null;
+  closeViewer();
   clearActivity();
   renderChat();
 }
@@ -497,37 +570,34 @@ function activityFromStored(answer) {
   return [...progress, ...reasoning].filter((item) => item.text);
 }
 
-function renderMessage(message, isLatest = false) {
+// Spelled out on purpose for anything involving stored energy: a technician
+// reading a quick answer at the machine should see this without scrolling.
+const SAFETY_PATTERN = /\b(lock ?out|lockout|tag ?out|hot surface|high voltage|under pressure|hydraulic pressure)\b/i;
+
+function renderMessage(message, isLatest = false, index = 0) {
   if (message.role === "assistant") {
-    // One card. Separate stacked boxes cost a screen and a half of chrome per
-    // answer on a tablet and push the answer itself out of view the moment
-    // the trailing sections appear.
     // Full-search answers carry both bodies; the toggle swaps them locally
     // with no network call - the full text was stored with the answer.
     const bodyText = message.detail_open && message.full_content ? message.full_content : message.content;
+    const citations = message.citations || [];
     return `
-      <article class="message assistant">
-        <span class="message-label">Troubleshooting Bot</span>
-        ${renderActivityLog(message.activity || [], { collapsed: true })}
+      <article class="a">
+        ${renderActivityLog(message.activity || [], { collapsed: true, sourceCount: citations.length })}
         ${renderSourceBadges(message.source_badges || [])}
-        <div class="answer-body">${renderAnswerText(bodyText, message.citations || [])}</div>
+        <div class="answer-body">${renderAnswerText(bodyText, citations, index)}</div>
+        ${SAFETY_PATTERN.test(bodyText) ? `<div class="notice">Lock out the machine before working on hydraulics, heaters or electrical.</div>` : ""}
         ${renderDetailToggle(message)}
         ${renderMoreDetail(message, isLatest)}
-        <div class="answer-extras">
-          ${renderCitationList(message.citations || [])}
-          ${renderRelatedAnswer(message.related_previous_answer)}
-          ${renderFeedback(message)}
-        </div>
+        ${renderSourceCards(citations, index)}
+        ${renderRelatedAnswer(message.related_previous_answer)}
+        ${renderFeedback(message)}
       </article>
     `;
   }
-  const label = message.role === "user" ? "You" : "System";
-  // The text goes in its own element rather than loose in the article: pre-wrap
-  // has to apply to the message, not to the template's indentation around it,
-  // which otherwise rendered as a blank line above and below every question.
-  return `
-    <article class="message ${message.role}"><span class="message-label">${label}</span><div class="message-text">${escapeHtml(message.content)}</div></article>
-  `;
+  if (message.role === "user") {
+    return `<div class="q">${escapeHtml(message.content)}</div>`;
+  }
+  return `<div class="system-note">${escapeHtml(message.content)}</div>`;
 }
 
 const MORE_DETAIL_QUESTION = "Yes - give me the full detail on that.";
@@ -577,9 +647,8 @@ function renderStreamingAnswer() {
   // result event replaces, but leaving it raw meant the technician watched
   // literal ** stream past and then snap into bold at the end.
   return `
-    <article class="message assistant streaming" aria-live="polite">
-      <span class="message-label">Troubleshooting Bot</span>
-      <div class="answer-body">${renderMarkdown(escapeHtml(partial))}</div>
+    <article class="a" aria-live="polite">
+      <div class="answer-body cursor">${renderMarkdown(escapeHtml(partial))}</div>
     </article>
   `;
 }
@@ -595,7 +664,7 @@ const ACTIVITY_LABELS = {
   final_answer: "Writing",
 };
 
-function renderActivityLog(items, { collapsed = false } = {}) {
+function renderActivityLog(items, { collapsed = false, sourceCount = 0 } = {}) {
   if (!items?.length) return "";
 
   const rows = items.map((item, index) => {
@@ -643,10 +712,9 @@ function renderActivityLog(items, { collapsed = false } = {}) {
     `;
   }
 
-  const reasoningCount = items.filter((item) => item.kind === "reasoning").length;
-  const summary = reasoningCount
-    ? `How this was worked out (${items.length} steps, ${reasoningCount} with reasoning)`
-    : `How this was worked out (${items.length} steps)`;
+  // One quiet line above the answer; the full trail is a tap away.
+  const searches = items.filter((item) => item.kind === "retrieval" || (item.kind === "tool_call" && /^Searching/.test(item.text))).length;
+  const summary = `${searches} search${searches === 1 ? "" : "es"}, ${sourceCount} source${sourceCount === 1 ? "" : "s"} \u00b7 how this was worked out`;
   return `
     <details class="activity-log collapsed">
       <summary>${escapeHtml(summary)}</summary>
@@ -683,15 +751,15 @@ function renderSourceBadges(badges) {
   return `<div class="source-badges">${badges.map((badge) => `<span>${escapeHtml(badge)}</span>`).join("")}</div>`;
 }
 
-function renderAnswerText(text, citations) {
+function renderAnswerText(text, citations, msgIndex = 0) {
   // First link loose source text, then apply markdown, then replace exact
   // [cite_n] markers. Order matters: linkInlineSourceCitations escapes the
   // text, markdown works on that escaped string, and citation buttons are
   // injected last so their HTML is not re-escaped or mangled by markdown.
-  let html = linkInlineSourceCitations(text, citations);
+  let html = linkInlineSourceCitations(text, citations, msgIndex);
   html = renderMarkdown(html);
   citations.forEach((citation) => {
-    const button = citationButtonHtml(citation, citation.id);
+    const button = citationButtonHtml(citation, citationNumber(citation), msgIndex, "cite");
     html = html.replaceAll(`[${citation.id}]`, button);
   });
   return html;
@@ -811,7 +879,7 @@ function renderMarkdown(escaped) {
   return out.join("");
 }
 
-function linkInlineSourceCitations(text, citations) {
+function linkInlineSourceCitations(text, citations, msgIndex = 0) {
   // Turn model-written citations like "(Source: manual.pdf, p. 326)" into
   // tappable buttons without changing the model answer stored in history.
   const sourcePattern = /\((Source:[^)]+|from [^)]+|same as above)\)/gi;
@@ -826,7 +894,7 @@ function linkInlineSourceCitations(text, citations) {
       ? lastCitation
       : matchCitationFromText(innerText, citations);
     output += escapeHtml(text.slice(cursor, match.index));
-    output += citation ? citationButtonHtml(citation, innerText) : escapeHtml(matchedText);
+    output += citation ? citationButtonHtml(citation, innerText, msgIndex, "cite cite-text") : escapeHtml(matchedText);
     if (citation) lastCitation = citation;
     cursor = match.index + matchedText.length;
   }
@@ -858,25 +926,59 @@ function normalizeCitationMatchText(value) {
   }
 }
 
-function renderCitationList(citations) {
+function citationNumber(citation) {
+  return String(citation.id || "").replace(/^cite_/, "");
+}
+
+function fileKind(citation) {
+  const suffix = (citation.source_file || citation.source_path || "").split(".").pop()?.toLowerCase();
+  if (suffix === "pdf") return "pdf";
+  if (["png", "jpg", "jpeg", "webp", "tif", "tiff"].includes(suffix)) return "image";
+  if (suffix === "xlsx") return "sheet";
+  if (suffix === "pptx") return "slide";
+  return "file";
+}
+
+function hasPageImage(citation) {
+  return ["pdf", "image"].includes(fileKind(citation));
+}
+
+function unitLabel(citation) {
+  return { sheet: "sheet", slide: "slide" }[fileKind(citation)] || "page";
+}
+
+function pageImageUrl(citation, page, width) {
+  return `/documents/page.png?source_path=${encodeURIComponent(citation.source_path)}&page=${page}&w=${width}`;
+}
+
+function isActiveSource(citation) {
+  const active = state.activeCitation;
+  return Boolean(active && active.source_path === citation.source_path && active.page_start === citation.page_start);
+}
+
+function renderSourceCards(citations, msgIndex) {
+  // Each source as a card with a thumbnail of the cited page, so a technician
+  // can see at a glance whether it is a table, a drawing or prose.
   if (!citations.length) return "";
   return `
-    <details class="source-ledger">
-      <summary>Raw citations used (${citations.length})</summary>
-      <div class="source-list">
+    <div class="sources">
       ${citations.map((citation) => `
-        <div class="source-row">
-          ${citationButtonHtml(citation, citation.label)}
-          <button class="source-button" data-open-pdf="${escapeAttr(JSON.stringify(citation))}">${openLabelForCitation(citation)}</button>
-        </div>
+        <button class="source ${isActiveSource(citation) ? "on" : ""}" data-msg="${msgIndex}" data-citation="${escapeAttr(JSON.stringify(citation))}">
+          ${hasPageImage(citation)
+            ? `<img src="${pageImageUrl(citation, citation.page_start || 1, 120)}" alt="" loading="lazy" />`
+            : `<span class="thumb"></span>`}
+          <span>
+            <b>[${escapeHtml(citationNumber(citation))}] ${escapeHtml(citation.source_file || "Source")}</b>
+            <small>${unitLabel(citation)} ${escapeHtml(citation.page_start ?? "")}${citation.source_scope === "general" ? " &middot; general library" : ""}</small>
+          </span>
+        </button>
       `).join("")}
-      </div>
-    </details>
+    </div>
   `;
 }
 
-function citationButtonHtml(citation, label) {
-  return `<button class="citation" data-citation-id="${citation.id}" data-citation="${escapeAttr(JSON.stringify(citation))}">${escapeHtml(label)}</button>`;
+function citationButtonHtml(citation, label, msgIndex = 0, className = "cite") {
+  return `<button class="${className}" data-msg="${msgIndex}" data-citation="${escapeAttr(JSON.stringify(citation))}" title="${escapeAttr(citation.label || "")}">${escapeHtml(label)}</button>`;
 }
 
 function renderRelatedAnswer(related) {
@@ -944,8 +1046,8 @@ function renderFeedback(message) {
     <div class="answer-feedback" data-answer-id="${message.answer_id}">
       <div class="feedback-row">
         <span class="muted">${rating ? "Thanks - recorded." : "Was this helpful?"}</span>
-        ${thumb("up", "&#128077;", "Helpful")}
-        ${thumb("down", "&#128078;", "Not helpful")}
+        ${thumb("up", icon("up"), "Helpful")}
+        ${thumb("down", icon("down"), "Not helpful")}
       </div>
       ${detail}
     </div>
@@ -1196,121 +1298,165 @@ async function streamAsk(requestBody) {
   throw new Error("Stream ended without a result.");
 }
 
-async function openCitation(citation) {
-  // Open the side panel immediately, then fill in the rendered preview.
+// ---- Source viewer -----------------------------------------------------------
+// Opened from a citation chip or source card: the cited page beside the chat on
+// a wide screen, or as a full sheet on a tablet. Every source of that answer is
+// a tab, and Prev/Next pages through the document from the cited page.
+
+function openCitation(citation, sources) {
   state.activeCitation = citation;
-  state.zoom = 1;
-  if (state.citationImageUrl) URL.revokeObjectURL(state.citationImageUrl);
-  state.citationImageUrl = null;
+  state.panelSources = sources?.length ? sources : [citation];
+  state.viewerPage = Number(citation.page_start) || 1;
+  state.viewerPageCount = null;
   state.citationTextPreview = null;
   renderChat();
+  loadViewerInfo(citation);
+  if (!hasPageImage(citation)) loadViewerText();
+}
 
+function closeViewer() {
+  state.activeCitation = null;
+  state.panelSources = [];
+  state.viewerPageCount = null;
+  state.citationTextPreview = null;
+}
+
+async function loadViewerInfo(citation) {
   try {
-    // PDFs and images come back as a rendered page image; xlsx/pptx come back
-    // as an image when the server has LibreOffice, else as extracted text.
+    const info = await api(`/documents/info?source_path=${encodeURIComponent(citation.source_path)}`);
+    // Ignore a late reply for a document the reader has already left.
+    if (state.activeCitation?.source_path !== citation.source_path) return;
+    state.viewerPageCount = info.page_count || null;
+    renderChat();
+  } catch {
+    /* Without a count, Next simply stays enabled. */
+  }
+}
+
+async function loadViewerText() {
+  // Sheets and slides: a rendered image when the server can make one,
+  // otherwise the extracted text, so the panel never just breaks.
+  const citation = state.activeCitation;
+  const page = state.viewerPage;
+  try {
     const preview = await api("/page-preview", {
       method: "POST",
-      body: JSON.stringify({ source_path: citation.source_path, page_number: citation.page_start }),
+      body: JSON.stringify({ source_path: citation.source_path, page_number: page }),
     });
-    if (preview.kind === "image") {
-      const binary = atob(preview.content);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      state.citationImageUrl = URL.createObjectURL(new Blob([bytes], { type: preview.media_type || "image/png" }));
-    } else {
-      state.citationTextPreview = preview.content || "(No text content on this page.)";
-    }
+    if (state.activeCitation !== citation || state.viewerPage !== page) return;
+    state.citationTextPreview = preview.kind === "image"
+      ? { image: `data:${preview.media_type || "image/png"};base64,${preview.content}` }
+      : { text: preview.content || "(Nothing on this page.)" };
   } catch (error) {
-    state.citationTextPreview = `Preview not available: ${error.message}`;
+    state.citationTextPreview = { text: `Preview not available: ${error.message}` };
   }
   renderChat();
 }
 
-async function openPdf(citation) {
+function goToPage(page) {
+  const last = state.viewerPageCount || Infinity;
+  const next = Math.min(Math.max(1, page), last);
+  if (!state.activeCitation || next === state.viewerPage) return;
+  state.viewerPage = next;
+  state.citationTextPreview = null;
+  renderChat();
+  if (!hasPageImage(state.activeCitation)) loadViewerText();
+}
+
+function renderSourcesPanel() {
+  const citation = state.activeCitation;
+  const page = state.viewerPage;
+  const count = state.viewerPageCount;
+  const unit = unitLabel(citation);
+  const tabs = state.panelSources.map((source) => `
+    <button class="panel-tab ${isActiveSource(source) ? "on" : ""}" data-panel-tab="${escapeAttr(JSON.stringify(source))}">
+      ${escapeHtml(citationNumber(source))} &middot; ${escapeHtml(truncate(source.source_file || "Source", 26))}
+    </button>
+  `).join("");
+
+  let body;
+  if (hasPageImage(citation)) {
+    body = `<img src="${pageImageUrl(citation, page, 1100)}" alt="${escapeAttr(`${citation.source_file}, ${unit} ${page}`)}" />`;
+  } else if (state.citationTextPreview?.image) {
+    body = `<img src="${state.citationTextPreview.image}" alt="${escapeAttr(`${citation.source_file}, ${unit} ${page}`)}" />`;
+  } else if (state.citationTextPreview?.text) {
+    body = `<pre class="page-text">${escapeHtml(state.citationTextPreview.text)}</pre>`;
+  } else {
+    body = `<p class="empty">Loading ${unit}...</p>`;
+  }
+
+  return `
+    <aside class="panel" aria-label="Source viewer">
+      <div class="panel-head">
+        ${tabs}
+        <span class="grow"></span>
+        <button class="iconbtn" id="close-viewer" aria-label="Close">${icon("close", 20)}</button>
+      </div>
+      <div class="panel-body">${body}</div>
+      <div class="panel-foot">
+        <button class="iconbtn" id="viewer-prev" ${page <= 1 ? "disabled" : ""}>${icon("prev")} Prev</button>
+        <span id="viewer-position">${unit[0].toUpperCase() + unit.slice(1)} ${page}${count ? ` of ${count}` : ""}${page === Number(citation.page_start) ? " &middot; cited" : ""}</span>
+        <button class="iconbtn" id="viewer-open">${icon("open", 16)} Open</button>
+        <button class="iconbtn" id="viewer-next" ${count && page >= count ? "disabled" : ""}>Next ${icon("next")}</button>
+      </div>
+    </aside>
+  `;
+}
+
+function truncate(text, length) {
+  return text.length > length ? `${text.slice(0, length - 1)}\u2026` : text;
+}
+
+function wireArtifactButtons() {
+  document.querySelector("#close-viewer")?.addEventListener("click", () => {
+    closeViewer();
+    renderChat();
+  });
+  document.querySelector("#viewer-prev")?.addEventListener("click", () => goToPage(state.viewerPage - 1));
+  document.querySelector("#viewer-next")?.addEventListener("click", () => goToPage(state.viewerPage + 1));
+  document.querySelector("#viewer-open")?.addEventListener("click", () => openPdf(state.activeCitation, state.viewerPage));
+  document.querySelectorAll("[data-panel-tab]").forEach((tab) => {
+    tab.addEventListener("click", () => openCitation(JSON.parse(tab.dataset.panelTab), state.panelSources));
+  });
+}
+
+// Keyboard: Escape closes the viewer, arrow keys turn pages - unless the reader
+// is typing, where arrows belong to the text box.
+document.addEventListener("keydown", (event) => {
+  if (!state.activeCitation || state.currentView !== "chat") return;
+  if (event.target.closest?.("textarea, input")) return;
+  if (event.key === "Escape") {
+    closeViewer();
+    renderChat();
+  } else if (event.key === "ArrowLeft") {
+    goToPage(state.viewerPage - 1);
+  } else if (event.key === "ArrowRight") {
+    goToPage(state.viewerPage + 1);
+  }
+});
+
+async function openPdf(citation, page = null) {
   // Create the tab during the tap/click event so mobile browsers do not treat
-  // the eventual PDF navigation as a blocked popup. Do not use "noopener"
-  // here: some browsers return null for noopener windows, which would make the
-  // app tab navigate to the PDF instead of the new tab.
+  // the eventual navigation as a blocked popup. Do not use "noopener" here:
+  // some browsers return null for noopener windows, which would make the app
+  // tab navigate to the document instead of the new tab.
   const pdfWindow = window.open("", "_blank");
   if (pdfWindow) {
-    pdfWindow.document.write("<p>Opening PDF...</p>");
+    pdfWindow.document.write("<p>Opening document...</p>");
   }
   try {
     const payload = await api("/pdf-link", {
       method: "POST",
       body: JSON.stringify({ source_path: citation.source_path }),
     });
-    if (pdfWindow) {
-      pdfWindow.location.href = payload.url;
-    } else {
-      throw new Error("The browser blocked the PDF tab. Allow popups for this app and try again.");
-    }
+    if (!pdfWindow) throw new Error("The browser blocked the new tab. Allow popups for this app and try again.");
+    // #page= is honoured by browser PDF viewers and harmless elsewhere.
+    pdfWindow.location.href = payload.url + (page && fileKind(citation) === "pdf" ? `#page=${page}` : "");
   } catch (error) {
     if (pdfWindow) pdfWindow.close();
-    machineMessages().push({ role: "system", content: `Could not open PDF: ${error.message}` });
+    machineMessages().push({ role: "system", content: `Could not open the document: ${error.message}` });
     renderChat();
   }
-}
-
-function openLabelForCitation(citation) {
-  const suffix = (citation.source_file || "").split(".").pop()?.toLowerCase();
-  if (suffix === "xlsx") return "Open Spreadsheet";
-  if (suffix === "pptx") return "Open Slides";
-  return "Open PDF";
-}
-
-function renderArtifactBody(citation) {
-  if (state.citationImageUrl) {
-    return `<img src="${state.citationImageUrl}" alt="${escapeAttr(citation.label)}" />`;
-  }
-  if (state.citationTextPreview) {
-    // No page image available (xlsx/pptx without LibreOffice), so show the
-    // extracted sheet/slide text instead of a broken preview.
-    return `<pre class="artifact-text-preview">${escapeHtml(state.citationTextPreview)}</pre>`;
-  }
-  return `<p class="muted">Loading preview...</p>`;
-}
-
-function renderArtifactPanel(citation) {
-  return `
-    <aside class="artifact-panel">
-      <header class="artifact-header">
-        <div>
-          <strong>${escapeHtml(citation.source_file || "Source")}</strong>
-          <div class="muted">Page ${citation.page_start}</div>
-        </div>
-        <button class="ghost" id="close-artifact">Close</button>
-      </header>
-      <div class="artifact-body" style="--zoom-width:${Math.round(state.zoom * 100)}%">
-        ${renderArtifactBody(citation)}
-      </div>
-      <footer class="artifact-tools">
-        <button id="zoom-out">Zoom -</button>
-        <button id="zoom-in">Zoom +</button>
-        <button data-open-pdf="${escapeAttr(JSON.stringify(citation))}">${openLabelForCitation(citation)}</button>
-      </footer>
-    </aside>
-  `;
-}
-
-function wireArtifactButtons() {
-  const close = document.querySelector("#close-artifact");
-  if (close) close.addEventListener("click", () => {
-    // Closing the preview returns to the normal single-column chat layout.
-    state.activeCitation = null;
-    state.citationTextPreview = null;
-    renderChat();
-  });
-  const zoomIn = document.querySelector("#zoom-in");
-  const zoomOut = document.querySelector("#zoom-out");
-  if (zoomIn) zoomIn.addEventListener("click", () => {
-    state.zoom = Math.min(2.5, state.zoom + 0.25);
-    renderChat();
-  });
-  if (zoomOut) zoomOut.addEventListener("click", () => {
-    state.zoom = Math.max(0.75, state.zoom - 0.25);
-    renderChat();
-  });
 }
 
 function escapeHtml(value) {
@@ -1350,7 +1496,7 @@ function applyTheme(theme) {
 
 function themeToggleHtml() {
   const label = storedTheme() === "dark" ? "Light mode" : "Dark mode";
-  return `<button class="ghost theme-toggle" type="button">${label}</button>`;
+  return `<button class="iconbtn theme-toggle" type="button" title="${label}" aria-label="${label}">${icon("moon")}</button>`;
 }
 
 function wireThemeToggle() {
@@ -1358,7 +1504,9 @@ function wireThemeToggle() {
     button.addEventListener("click", () => {
       const next = storedTheme() === "dark" ? "light" : "dark";
       applyTheme(next);
-      button.textContent = next === "dark" ? "Light mode" : "Dark mode";
+      const label = next === "dark" ? "Light mode" : "Dark mode";
+      button.title = label;
+      button.setAttribute("aria-label", label);
     });
   });
 }

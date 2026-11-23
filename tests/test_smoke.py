@@ -219,3 +219,28 @@ def test_web_shell_is_served(client):
     page = client.get("/app/")
     assert page.status_code == 200 and "__ASSET_VERSION__" not in page.text
     assert client.get("/login").status_code == 200
+
+
+def test_viewer_pages_through_a_cited_document(client):
+    import io
+
+    from PIL import Image
+
+    source_path = f"{MACHINE_FOLDER}/Operating Manual.pdf"
+    info = client.get("/documents/info", params={"source_path": source_path}).json()
+    assert info == {"title": "Operating Manual.pdf", "kind": "pdf", "page_count": 3}
+
+    # Prev/Next walks every page of the document, not just the cited one.
+    for page in (1, 2, 3):
+        image = client.get("/documents/page.png", params={"source_path": source_path, "page": page, "w": 600})
+        assert image.status_code == 200 and image.headers["content-type"] == "image/png"
+        assert Image.open(io.BytesIO(image.content)).width == 600
+    past_the_end = client.get("/documents/page.png", params={"source_path": source_path, "page": 4})
+    assert past_the_end.status_code == 404
+
+    # Thumbnails ask for a small width; requests are clamped to a sane range.
+    thumb = client.get("/documents/page.png", params={"source_path": source_path, "page": 2, "w": 10})
+    assert Image.open(io.BytesIO(thumb.content)).width == 120
+
+    outside = client.get("/documents/info", params={"source_path": "../../etc/passwd"})
+    assert outside.status_code == 404

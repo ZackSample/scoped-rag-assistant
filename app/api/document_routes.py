@@ -3,10 +3,11 @@
 import time
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
-from app.rag.pdf_preview import pdf_file_response, render_preview, safe_source_path
+from app.rag.pdf_preview import document_info, page_png, pdf_file_response, render_preview, safe_source_path
 
 
 router = APIRouter()
@@ -41,6 +42,30 @@ def page_preview_endpoint(request: PagePreviewRequest) -> dict:
         return render_preview(request.source_path, request.page_number)
     except Exception as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.get("/documents/info")
+def document_info_endpoint(source_path: str) -> dict:
+    """Title, kind and page count of a cited file, for the viewer's Prev/Next."""
+
+    try:
+        return document_info(source_path)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/documents/page.png")
+def page_image_endpoint(source_path: str, page: int = Query(1, ge=1), w: int = Query(1000)) -> Response:
+    """One page of a cited file as a PNG, for the viewer and source thumbnails."""
+
+    try:
+        png = page_png(source_path, page, w)
+    except LookupError as exc:
+        raise HTTPException(status_code=415, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    # Private: pages sit behind the login gate, so no shared cache may keep them.
+    return Response(png, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
 
 
 @router.post("/pdf-link")

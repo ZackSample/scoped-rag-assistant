@@ -2,6 +2,8 @@
 
 import base64
 import io
+import threading
+from functools import lru_cache
 from pathlib import Path, PureWindowsPath
 
 import pymupdf
@@ -31,6 +33,10 @@ MEDIA_TYPES = {
     ".tif": "image/tiff",
     ".tiff": "image/tiff",
 }
+
+# PyMuPDF is not safe to use from two threads at once, and the web server
+# renders page requests on several.
+_RENDER_LOCK = threading.Lock()
 
 # A preview is shown in a panel, not printed, so an enormous scan is downscaled
 # rather than streamed at native size. Roughly matches a PDF page rendered at
@@ -151,7 +157,7 @@ def render_pdf_page_png(source_path: str, page_number: int, zoom: float = 1.6) -
     if page_number < 1:
         raise RuntimeError("Page number must be 1 or greater.")
 
-    with pymupdf.open(path) as doc:
+    with _RENDER_LOCK, pymupdf.open(path) as doc:
         if page_number > len(doc):
             raise RuntimeError(f"PDF only has {len(doc)} pages.")
         # Render only the requested page to keep citation previews lightweight.
@@ -236,3 +242,59 @@ def pdf_file_response(source_path: str) -> FileResponse:
     path = safe_source_path(source_path)
     media_type = MEDIA_TYPES.get(path.suffix.lower(), "application/octet-stream")
     return FileResponse(path, media_type=media_type, filename=path.name, content_disposition_type="inline")
+
+
+def document_info(source_path: str) -> dict:
+    """Title, kind and page count of a cited file, for the viewer's page controls.
+
+    "Pages" are pages for a PDF, frames for an image, sheets for a workbook and
+    slides for a deck - the same units citations use.
+    """
+
+    path = safe_source_path(source_path)
+    suffix = path.suffix.lower()
+    if suffix == ".pdf":
+        with _RENDER_LOCK, pymupdf.open(path) as doc:
+            count = len(doc)
+        kind = "pdf"
+    elif suffix in IMAGE_SUFFIXES:
+        from PIL import Image
+
+        with Image.open(path) as image:
+            count = getattr(image, "n_frames", 1)
+        kind = "image"
+    else:
+        count = len(_text_parser_for_suffix(suffix)(path))
+        kind = "sheet" if suffix == ".xlsx" else "slide"
+    return {"title": path.name, "kind": kind, "page_count": count}
+
+
+@lru_cache(maxsize=256)
+def _render_pdf_width(path: str, mtime: float, page_number: int, width: int) -> bytes:
+    # mtime is part of the cache key so a replaced file is never served stale.
+    with _RENDER_LOCK, pymupdf.open(path) as doc:
+        if not 1 <= page_number <= len(doc):
+            raise RuntimeError(f"PDF only has {len(doc)} pages.")
+        page = doc[page_number - 1]
+        zoom = width / page.rect.width
+        return page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), alpha=False).tobytes("png")
+
+
+def page_png(source_path: str, page_number: int, width: int = 1000) -> bytes:
+    """One page as a PNG of the requested width, for <img> tags in the viewer.
+
+    Served by URL rather than as base64 JSON so the browser can cache pages and
+    load thumbnails lazily. Width is clamped: thumbnails need ~120px, the viewer
+    ~1100px, and nothing needs more than 2000.
+    """
+
+    path = safe_source_path(source_path)
+    suffix = path.suffix.lower()
+    if suffix == ".pdf":
+        return _render_pdf_width(str(path), path.stat().st_mtime, page_number, max(120, min(width, 2000)))
+    if suffix in IMAGE_SUFFIXES:
+        return render_image_page_png(source_path, page_number)
+    png = _render_office_page_best_effort(path, page_number)
+    if png is None:
+        raise LookupError("This file type is shown as text, not as a page image.")
+    return png

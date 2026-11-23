@@ -1,39 +1,38 @@
 /*
   Tablet-first technician UI.
-  The design favors large tap targets, clear machine context, and a citation
-  panel that can sit beside the chat in landscape or cover the screen on mobile.
+  Large tap targets, clear machine context, and a source viewer that sits
+  beside the chat on a wide screen or covers it as a full sheet on a tablet.
+  Touch screens get bigger text and targets automatically.
 */
 
 :root {
-  /* Light by default; dark is the technician's toggle, keyed off
-     html[data-theme="dark"]. */
   color-scheme: light;
-  --bg: #f6f7f9;
+  --bg: #ffffff;
   --panel: #ffffff;
-  --panel-2: #eef1f5;
+  --panel-2: #f4f6f8;
+  --surface: #f4f6f8;
+  --surface-2: #e9edf2;
   --text: #1f2933;
-  --muted: #627080;
-  --line: #d5dbe3;
-  --line-soft: rgba(31, 41, 51, 0.08);
-  --head: #1f2933;
+  --muted: #5f6c7b;
+  --faint: #8a96a3;
+  --line: #d9dee5;
+  --hairline: rgba(31, 41, 51, 0.08);
   --accent: #3b5bdb;
   --accent-2: #5c7cfa;
   --on-accent: #ffffff;
   --good: #2f9e44;
-  --good-line: rgba(47, 158, 68, 0.45);
-  --good-soft: rgba(47, 158, 68, 0.14);
-  --good-faint: rgba(47, 158, 68, 0.08);
-  --good-ink: #1e6b2e;
   --warn: #e8590c;
-  --warn-line: rgba(232, 89, 12, 0.4);
-  --warn-soft: rgba(232, 89, 12, 0.12);
-  --warn-faint: rgba(232, 89, 12, 0.06);
-  --warn-ink: #a33d06;
-  /* Error/destructive states keep a conventional red - a tech's eye expects it. */
+  --warn-soft: #fff4e6;
+  --warn-ink: #9c3d06;
   --danger: #c0392b;
-  --danger-soft: rgba(192, 57, 43, 0.12);
-  --user-bubble: #e7ecfb;
-  --mono-bg: rgba(59, 91, 219, 0.08);
+  --radius: 12px;
+  --tap: 44px;
+  --text-size: 15px;
+  font-family: Inter, "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+@media (pointer: coarse) {
+  :root { --tap: 56px; --text-size: 17px; }
 }
 
 html[data-theme="dark"] {
@@ -41,885 +40,423 @@ html[data-theme="dark"] {
   --bg: #15191f;
   --panel: #1d232b;
   --panel-2: #252c36;
+  --surface: #1d232b;
+  --surface-2: #2a323d;
   --text: #e6e9ee;
-  --muted: #9aa5b1;
+  --muted: #a3adb9;
+  --faint: #7d8896;
   --line: #333c48;
-  --line-soft: rgba(230, 233, 238, 0.1);
-  --head: #c5cdd8;
+  --hairline: rgba(230, 233, 238, 0.08);
   --accent: #748ffc;
   --accent-2: #91a7ff;
   --on-accent: #0b1020;
   --good: #69db7c;
-  --good-line: rgba(105, 219, 124, 0.5);
-  --good-soft: rgba(105, 219, 124, 0.16);
-  --good-faint: rgba(105, 219, 124, 0.09);
-  --good-ink: #b2f2bb;
   --warn: #ffa94d;
-  --warn-line: rgba(255, 169, 77, 0.45);
-  --warn-soft: rgba(255, 169, 77, 0.16);
-  --warn-faint: rgba(255, 169, 77, 0.08);
+  --warn-soft: rgba(255, 169, 77, 0.12);
   --warn-ink: #ffd8a8;
   --danger: #ff6b6b;
-  --danger-soft: rgba(255, 107, 107, 0.14);
-  --user-bubble: #26304a;
-  --mono-bg: rgba(145, 167, 255, 0.12);
 }
 
-/* Chat view flips the surface roles: the ground takes the tint and the message
-   cards sit white (light) or a step lighter (dark) on top of it. Scoped as a
-   token override so the composer, buttons, ledger, and activity card all ride
-   along without per-element edits. */
-.chat-screen {
-  --bg: #eef1f5;
-  --panel: #eef1f5;
-  --panel-2: #ffffff;
-  --user-bubble: #dfe6fb;
-  background: var(--bg);
-}
-
-html[data-theme="dark"] .chat-screen {
-  --bg: #15191f;
-  --panel: #1a1f26;
-  --panel-2: #252c36;
-  --user-bubble: #26304a;
-}
-
-* {
-  box-sizing: border-box;
-}
-
+* { box-sizing: border-box; }
+html, body, #app { height: 100%; margin: 0; }
 body {
-  margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: var(--text-size);
+  line-height: 1.5;
 }
+button, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: default; opacity: 0.4; }
+:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+.muted, .empty { color: var(--faint); font-size: 14px; }
+.screen { padding: 24px; }
 
-button,
-input,
-textarea {
-  font: inherit;
+/* ---- Shell and top bar ---- */
+.shell { display: flex; flex-direction: column; height: 100dvh; }
+.top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 0 16px;
+  min-height: 56px;
+  border-bottom: 1px solid var(--line);
+  flex: none;
 }
-
-button {
-  border: 1px solid var(--line);
-  background: var(--panel-2);
-  color: var(--text);
-  border-radius: 8px;
-  min-height: 44px;
-  padding: 10px 14px;
-}
-
-button.primary {
+.top .mark {
+  width: 34px;
+  height: 30px;
+  border-radius: 7px;
   background: var(--accent);
-  border-color: var(--accent);
   color: var(--on-accent);
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  margin-right: 4px;
 }
-
-button.ghost {
-  background: transparent;
-}
-
-button.citation {
-  background: var(--warn-soft);
-  border-color: var(--warn);
-  color: var(--warn-ink);
-  min-height: 34px;
-  padding: 4px 8px;
-}
-
-.screen {
-  height: 100dvh;
+.top .title { line-height: 1.2; min-width: 0; }
+.top .title small { display: block; font-size: 12px; color: var(--faint); }
+.top .title b {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
   overflow: hidden;
-  padding: clamp(10px, 1.4vw, 18px);
+  text-overflow: ellipsis;
 }
-
-.screen.selector-screen {
-  min-height: 100vh;
-  height: auto;
-  overflow: auto;
+.grow { flex: 1; }
+.top .who {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  flex: none;
 }
-
-.selector-header,
-.chat-header {
-  display: flex;
+.iconbtn {
+  background: none;
+  border: 0;
+  min-width: var(--tap);
+  min-height: var(--tap);
+  display: inline-flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 20px;
-}
-
-.header-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  justify-content: flex-end;
-}
-
-.chat-header {
-  min-height: 64px;
-  margin-bottom: 12px;
-}
-
-.context-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-shrink: 0;
-  border: 1px solid var(--warn-line);
-  border-width: 0 0 1px;
-  border-radius: 8px;
-  border-bottom-right-radius: 0;
-  border-bottom-left-radius: 0;
-  background: var(--warn-faint);
-  padding: 10px 12px;
-  color: var(--warn-ink);
-}
-
-.context-bar button {
-  min-height: 36px;
-  padding: 6px 10px;
-}
-
-.eyebrow {
-  margin: 0 0 8px;
+  justify-content: center;
+  gap: 6px;
   color: var(--muted);
+  border-radius: 10px;
+  padding: 0 10px;
   font-size: 14px;
+  text-decoration: none;
 }
+.iconbtn:hover:not(:disabled) { background: var(--surface); color: var(--text); }
+.icon { flex: none; }
+@media (max-width: 700px) { .iconbtn .label { display: none; } }
 
-h1 {
-  margin: 0;
-  font-size: 34px;
-  letter-spacing: 0;
-  color: var(--head);
-}
-
-.machine-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-  gap: 14px;
-}
-
-.history-list {
-  display: grid;
-  gap: 10px;
-  max-width: 860px;
-}
-
-.history-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  gap: 12px;
+/* ---- Start screen ---- */
+.start { flex: 1; overflow: auto; }
+.start-inner { max-width: 980px; margin: 0 auto; padding: 24px 20px 40px; }
+.start-title { font-size: 22px; font-weight: 600; margin: 4px 0 16px; }
+.search {
+  display: flex;
   align-items: center;
-  text-align: left;
-  background: var(--panel);
+  gap: 10px;
+  border: 1.5px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0 14px;
+  min-height: calc(var(--tap) + 8px);
+  color: var(--faint);
+  margin-bottom: 18px;
 }
-
-.machine-card {
-  /* A <button> centres its content vertically when it is taller than that
-     content. With min-height set, a card whose model name wraps to fewer lines
-     had its whole block pushed down, so the machine numbers sat at different
-     heights across a row. Laying the card out as a top-anchored column pins
-     every number to the same offset while the text below it still flows. */
-  display: flex;
-  flex-direction: column;
-  /* align-items deliberately left at its default stretch: the three spans were
-     full-width blocks before, and flex-start would shrink them to fit-content
-     and change where the model name wraps. Only the vertical anchoring should
-     change here. */
-  justify-content: flex-start;
-  text-align: left;
-  min-height: 124px;
-  padding: 18px;
-  background: var(--panel);
-}
-
-.machine-number {
-  display: block;
-  font-size: 34px;
-  font-weight: 800;
-}
-
-.machine-model,
-.machine-serial {
-  display: block;
-  margin-top: 8px;
-  color: var(--muted);
-  font-size: 13px;
-  line-height: 1.3;
-}
-
-.chat-layout {
-  /* Default chat is one column until a citation preview is opened. */
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
-  height: calc(100dvh - 132px);
-  min-height: 0;
-}
-
-.chat-layout.with-panel {
-  /* Landscape tablets get chat and source preview side by side. */
-  grid-template-columns: minmax(520px, 1fr) minmax(360px, 40vw);
-}
-
-.chat-shell,
-.artifact-panel {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-}
-
-.chat-shell {
-  display: flex;
-  height: 100%;
-  min-height: 0;
-  flex-direction: column;
-}
-
-.messages {
+.search:focus-within { border-color: var(--accent-2); }
+.search input {
+  border: 0;
+  outline: 0;
   flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 14px;
-  -webkit-overflow-scrolling: touch;
+  font-size: 18px;
+  color: var(--text);
+  background: none;
+  min-width: 0;
 }
-
-.message-stack {
-  width: min(100%, 980px);
-  margin: 0 auto;
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 10px; }
+.tile {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 8px;
+  background: var(--panel);
+  text-align: center;
+  min-height: 78px;
+  min-width: 0;
 }
-
-.message {
-  width: 100%;
-  max-width: 100%;
-  margin-bottom: 12px;
-  padding: 14px;
-  border-radius: 8px;
-  background: var(--panel-2);
-  line-height: 1.45;
+.tile:hover { border-color: var(--accent); background: var(--surface); }
+.tile b { display: block; font-size: 24px; line-height: 1.2; }
+.tile small {
+  display: block;
+  color: var(--faint);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+.recent { display: grid; gap: 2px; }
+.recent button { text-align: left; background: none; border: 0; border-radius: 10px; padding: 12px; }
+.recent button:hover { background: var(--surface); }
+.recent small { display: block; color: var(--faint); font-size: 12px; }
 
-/* pre-wrap ONLY on the text itself, never on a container. On .message it made
-   every newline and indent in the template - between the label and the text,
-   between an answer and its citations - render as a literal blank line. */
-.message-text {
+/* ---- Chat ---- */
+.chat { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; }
+.chat.with-panel { grid-template-columns: minmax(0, 1.2fr) minmax(380px, 1fr); }
+@media (max-width: 1099px) { .chat.with-panel { grid-template-columns: minmax(0, 1fr); } }
+.thread-col { display: flex; flex-direction: column; min-height: 0; }
+.thread { flex: 1; overflow: auto; padding: 20px 16px 8px; }
+.thread-inner { max-width: 780px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+
+.q {
+  align-self: flex-end;
+  max-width: 85%;
+  background: var(--surface-2);
+  border-radius: 16px 16px 4px 16px;
+  padding: 10px 14px;
   white-space: pre-wrap;
 }
+.a { display: flex; flex-direction: column; gap: 10px; }
+.system-note { color: var(--danger); font-size: 14px; }
+.cursor::after { content: "\258D"; color: var(--accent-2); }
 
-/* A question is one line of text; it does not need an answer-sized card. */
-.message.user {
-  padding: 8px 12px;
-  font-size: 0.92rem;
-}
-.message.user .message-label {
-  margin-bottom: 2px;
-}
-
-.message-label {
-  display: block;
-  margin-bottom: 8px;
+.hello { text-align: center; color: var(--muted); padding: 48px 10px 10px; }
+.hello b { display: block; font-size: 22px; color: var(--text); margin-bottom: 6px; }
+.starters { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 20px; }
+.starters button {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 999px;
+  padding: 0 14px;
+  min-height: 40px;
   color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
 }
+.starters button:hover { border-color: var(--accent); color: var(--text); }
 
-.source-badges {
+.composer-wrap { padding: 10px 16px 14px; flex: none; }
+.composer {
+  max-width: 780px;
+  margin: 0 auto;
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 10px;
+  align-items: flex-end;
+  gap: 8px;
+  border: 1.5px solid var(--line);
+  border-radius: 16px;
+  padding: 6px 6px 6px 14px;
+  background: var(--panel);
+}
+.composer:focus-within { border-color: var(--accent-2); }
+.composer textarea {
+  flex: 1;
+  border: 0;
+  outline: 0;
+  resize: none;
+  font-size: max(16px, var(--text-size));
+  padding: 9px 0;
+  max-height: 160px;
+  background: none;
+}
+.send {
+  width: var(--tap);
+  height: var(--tap);
+  border-radius: 12px;
+  border: 0;
+  background: var(--accent);
+  color: var(--on-accent);
+  display: grid;
+  place-items: center;
+  flex: none;
 }
 
+/* Answer-level badges: which document scopes the answer stands on. */
+.source-badges { display: flex; flex-wrap: wrap; gap: 6px; }
 .source-badges span {
+  font-size: 12px;
+  color: var(--muted);
   border: 1px solid var(--line);
   border-radius: 999px;
-  color: var(--muted);
+  padding: 1px 10px;
+}
+
+/* Rendered answers are real HTML, so no pre-wrap here: every newline between
+   generated block tags would otherwise become a visible blank line. */
+.answer-body { line-height: 1.6; overflow-wrap: anywhere; }
+.answer-body p { margin: 0 0 8px; }
+.answer-body p:last-child { margin-bottom: 0; }
+.answer-body h4, .answer-body h5, .answer-body h6 { font-size: 15px; margin: 14px 0 4px; }
+.answer-body ul, .answer-body ol { margin: 4px 0 8px; padding-left: 22px; }
+.answer-body li { margin: 2px 0; }
+.answer-body code { background: var(--surface-2); border-radius: 4px; padding: 0 4px; font-size: 0.92em; }
+/* Tables scroll themselves so a wide one never pushes the chat sideways. */
+.table-scroll { overflow-x: auto; margin: 6px 0 10px; }
+.answer-body table { border-collapse: collapse; font-size: 14px; }
+.answer-body th, .answer-body td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: top; }
+.answer-body th { background: var(--surface); }
+
+/* Citation chips: a number in the text, tap to open the page beside the chat. */
+.cite {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 5px;
+  margin: 0 2px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--accent);
   font-size: 12px;
-  padding: 3px 8px;
+  font-weight: 600;
+  vertical-align: 1px;
+  border: 0;
+}
+.cite.cite-text { display: inline; height: auto; padding: 0 4px; font-weight: 500; }
+@media (pointer: coarse) { .cite { min-width: 30px; height: 28px; font-size: 14px; } }
+
+.notice {
+  border-left: 3px solid var(--warn);
+  padding: 6px 12px;
+  color: var(--warn-ink);
+  background: var(--warn-soft);
+  font-size: 14px;
 }
 
-.message.user {
-  background: var(--user-bubble);
-  border-left: 3px solid var(--accent-2);
-}
-
-.message.assistant {
-  border-left: 3px solid var(--accent);
-}
-
-.message.system {
-  border: 1px solid var(--warn-line);
-  background: var(--warn-faint);
-}
-
-.composer {
-  /* Single row: the Ask button used to span a two-line textarea, so the
-     composer ate a fifth of a tablet screen for a one-line question. */
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 8px;
-  border-top: 1px solid var(--line);
-  padding: 8px 10px;
-}
-.composer textarea {
-  /* One line at rest. min-height alone did not shrink it - a textarea sizes to
-     its `rows` attribute, which defaults to 2, so it always rendered two lines
-     tall no matter what min-height said. rows="1" plus auto-grow in app.js. */
-  min-height: 0;
-  height: auto;
-  /* Grows with a long question instead of scrolling inside a fixed box. */
-  max-height: 30vh;
-  padding: 10px 12px;
-  line-height: 1.35;
-}
-.composer button {
-  padding: 10px 20px;
-}
-
-textarea {
-  width: 100%;
-  min-height: 58px;
-  resize: vertical;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel-2);
-  color: var(--text);
-  padding: 12px;
-}
-
-.source-ledger {
-  margin-top: 12px;
-  border-top: 1px solid var(--line);
-  padding-top: 10px;
-  white-space: normal;
-}
-
-.source-ledger summary {
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 700;
-  min-height: 36px;
-  list-style-position: inside;
-}
-
-.source-list {
-  display: grid;
-  gap: 8px;
-  max-height: 190px;
-  overflow: auto;
-  margin-top: 12px;
-  padding-right: 4px;
-  -webkit-overflow-scrolling: touch;
-}
-
-.source-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: center;
-}
-
-.source-row .citation {
-  min-width: 0;
-  overflow: hidden;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.source-button {
-  min-height: 34px;
-  padding: 4px 8px;
-  background: transparent;
-}
-
-.artifact-panel {
+/* Source cards with a thumbnail of the cited page. */
+.sources { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.source {
   display: flex;
-  height: 100%;
-  min-height: 0;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.artifact-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
   gap: 10px;
-  border-bottom: 1px solid var(--line);
-  padding: 14px;
-}
-
-.artifact-body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 12px;
-  -webkit-overflow-scrolling: touch;
-}
-
-.artifact-body img {
-  display: block;
-  width: var(--zoom-width, 100%);
-  max-width: none;
-  margin: 0 auto;
-  background: white;
-}
-
-.artifact-tools {
-  display: flex;
-  gap: 8px;
-  border-top: 1px solid var(--line);
-  padding: 12px;
-}
-
-.muted {
-  color: var(--muted);
-}
-
-@media (max-width: 900px) {
-  /* On smaller screens, the citation preview becomes a full-screen panel. */
-  .screen {
-    padding: 14px;
-  }
-
-  .chat-layout.with-panel {
-    grid-template-columns: 1fr;
-  }
-
-  .artifact-panel {
-    position: fixed;
-    inset: 0;
-    z-index: 20;
-    height: 100dvh;
-    max-height: none;
-    border-radius: 0;
-  }
-
-  /* Stays a single row even on a phone. Stacking the Ask button under the
-     textarea doubled the composer's height for no gain - the button does not
-     need the full width to be a comfortable tap target. */
-  .composer button {
-    padding: 10px 16px;
-  }
-
-  .source-row {
-    grid-template-columns: 1fr;
-  }
-
-  .history-row {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* Markdown inside an answer bubble. Headings start small on purpose: they are
-   structure within a message, not page-level headings. */
-.answer-body h4,
-.answer-body h5,
-.answer-body h6 {
-  margin: 0.9rem 0 0.35rem;
-  font-size: 0.95rem;
-  font-weight: 600;
-}
-.answer-body h4:first-child,
-.answer-body h5:first-child,
-.answer-body h6:first-child {
-  margin-top: 0;
-}
-.answer-body ul,
-.answer-body ol {
-  margin: 0.4rem 0 0.6rem;
-  padding-left: 1.3rem;
-}
-.answer-body li {
-  margin: 0.2rem 0;
-}
-.answer-body code {
-  padding: 0.1rem 0.3rem;
-  border-radius: 4px;
-  background: var(--mono-bg);
-  font-size: 0.9em;
-}
-.answer-body strong {
-  font-weight: 650;
-}
-
-/* A previously answered question, offered beside the real answer rather than
-   in place of it. Collapsed so it never competes with what was asked. */
-.related-answer {
-  margin-top: 0.75rem;
-  padding: 0.5rem 0.7rem;
-  /* Tinted rather than grey: it sat next to the citations panel and read as
-     more of the same, so it was easy to miss entirely. */
-  border: 1px solid var(--warn-line);
-  background: var(--warn-faint);
-  border-radius: 8px;
-  font-size: 0.9rem;
-}
-.related-answer summary {
-  cursor: pointer;
-  font-weight: 600;
-}
-.related-answer p {
-  margin: 0.4rem 0 0;
-}
-
-/* Streamed partial answer: visually identical to a finished one apart from a
-   soft cursor, so text does not appear to move when the final answer swaps in. */
-.message.assistant.streaming::after {
-  content: "";
-  display: inline-block;
-  width: 0.5rem;
-  height: 1rem;
-  margin-left: 2px;
-  vertical-align: text-bottom;
-  background: currentColor;
-  opacity: 0.45;
-  animation: imm-caret 1s steps(2, start) infinite;
-}
-@keyframes imm-caret {
-  50% { opacity: 0; }
-}
-
-/* Who is signed in. Shown next to Sign out because shop-floor devices are shared -
-   a technician needs to see at a glance that they are not about to ask a
-   question under the previous shift's name. */
-.signed-in-as {
-  align-self: center;
-  padding-right: 0.25rem;
-  font-size: 0.85rem;
-  opacity: 0.7;
-  white-space: nowrap;
-}
-.selector-header .header-actions {
-  display: flex;
-  gap: 0.5rem;
   align-items: center;
-}
-
-/* Activity log: an append-only trace of what the assistant actually did,
-   shown while an answer is being produced. Replaced a single overwritten
-   status line that discarded everything the pipeline had already reported. */
-/* The trail is its own card between the question and the answer, not part of
-   either. It is a different kind of thing from an answer - a record of how the
-   answer was reached - so it gets its own quieter surface rather than
-   inheriting the answer bubble's styling. */
-.activity-log {
+  border: 1px solid var(--line);
   border-radius: 10px;
-  border: 1px dashed var(--line);
-  background: var(--line-soft);
+  padding: 8px;
+  background: var(--panel);
+  text-align: left;
+  min-height: var(--tap);
 }
-
-/* Collapsed once the answer lands - kept, not discarded, so the reasoning is
-   readable after the fact rather than only while it scrolls past. Sits ABOVE
-   the answer as a single thin line: it is how the answer was reached, so it
-   reads before it, and as a box it competed with the answer for attention. */
-.activity-log.collapsed {
-  margin: 0 0 0.6rem;
-  padding: 0 0 0.5rem;
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  border-radius: 0;
-  background: none;
-  font-size: 0.85rem;
+.source:hover, .source.on { border-color: var(--accent); background: var(--surface); }
+.source img, .source .thumb {
+  width: 38px;
+  height: 50px;
+  object-fit: cover;
+  object-position: top;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface);
+  flex: none;
 }
-.activity-log.collapsed summary {
-  cursor: pointer;
-  opacity: 0.65;
-  font-size: 0.8rem;
-}
-.activity-log.collapsed[open] summary {
-  margin-bottom: 0.4rem;
-}
-.activity-log.collapsed .activity-item {
-  display: grid;
-  grid-template-columns: 1rem 4.5rem 1fr;
-  gap: 0.5rem;
-  align-items: baseline;
-  margin: 0.15rem 0;
-}
-
-.activity-log.live {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  margin: 0 0 0.6rem;
-  padding: 0.6rem 0.8rem;
-  font-size: 0.85rem;
-}
-.activity-item {
-  display: grid;
-  grid-template-columns: 1rem 4.5rem 1fr;
-  gap: 0.5rem;
-  align-items: baseline;
-}
-/* Completed steps recede so the eye lands on what is happening now. */
-.activity-item.done {
-  opacity: 0.45;
-}
-.activity-item.current {
-  opacity: 1;
-}
-.activity-label {
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  opacity: 0.75;
-}
-.activity-text {
+.source > span { min-width: 0; }
+.source b {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   overflow-wrap: anywhere;
-}
-/* The model's own words, distinguished from pipeline events. */
-.activity-item.reasoning .activity-text {
-  font-style: italic;
-}
-.activity-item.judge_result .activity-text,
-.activity-item.retrieval_result .activity-text {
-  font-weight: 550;
-}
-.activity-tick {
-  opacity: 0.6;
-}
-.activity-dot {
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 50%;
-  background: currentColor;
-  animation: imm-pulse 1.2s ease-in-out infinite;
-}
-@keyframes imm-pulse {
-  0%, 100% { opacity: 0.3; }
-  50%      { opacity: 1; }
-}
-
-/* Thumbs up/down, directly under the answer text and ABOVE the citation list.
-   Two reasons for that position: it is the first thing after the answer, which
-   is where a technician still has an opinion, and below the citations it sat
-   right beneath the "a similar question was answered before" panel - close
-   enough to read as rating that panel rather than the answer.
-
-   Separated by a rule rather than a card: it is an action on the answer, not
-   another piece of it, and a second bordered box inside the same bubble made
-   the answer look like it had a footer of its own. */
-/* Everything trailing the answer - rate it, how it was worked out, citations,
-   the related prior answer - lives inside the answer card as flat rows divided
-   by hairlines. Each used to be its own bordered box, which read as four more
-   answers stacked below the real one. */
-.answer-extras > * {
-  margin: 0;
-  border: 0;
-  border-top: 1px solid var(--line);
-  border-radius: 0;
-  background: none;
-  padding: 0.5rem 0 0;
-  font-size: 0.85rem;
-}
-.answer-extras > *:first-child {
-  margin-top: 0.6rem;
-}
-.answer-extras > * + * {
-  margin-top: 0.35rem;
-}
-.answer-extras summary {
-  cursor: pointer;
-  color: var(--muted);
-  min-height: 32px;
+  font-size: 13px;
   font-weight: 600;
+  line-height: 1.3;
 }
-/* The prior-answer callout keeps its tint - it is the one row that is a
-   suggestion rather than metadata, and grey made it invisible. */
-.answer-extras > .related-answer summary {
-  color: var(--accent-2);
-}
+.source small { color: var(--faint); font-size: 12px; }
 
-/* Sits between the answer and the extras, because it is the natural next step
-   through the answer rather than a judgement on it. Full width so a gloved
-   hand cannot miss it on a tablet. */
-.more-detail {
-  margin-top: 0.75rem;
-}
+/* "More detail" swaps in the full answer; full width for a gloved hand. */
 .more-detail button {
   width: 100%;
-  border-style: dashed;
-  color: var(--muted);
-}
-.more-detail button:hover {
-  color: var(--text);
-  border-style: solid;
-}
-
-.answer-feedback {
-  margin-top: 0.75rem;
-  padding-top: 0.6rem;
-  border-top: 1px solid var(--line);
-  font-size: 0.9rem;
-}
-.feedback-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.feedback-thumb {
-  /* Deliberately large for a gloved hand on a tablet - the default button
-     padding elsewhere assumes a text label to aim at, and an emoji is a much
-     smaller target than it looks. */
-  min-width: 44px;
-  min-height: 44px;
-  padding: 0.35rem 0.6rem;
-  font-size: 1.15rem;
-  line-height: 1;
+  min-height: var(--tap);
+  border: 1px solid var(--line);
   border-radius: 10px;
-  background: transparent;
-  opacity: 0.65;
-}
-.feedback-thumb:hover {
-  opacity: 1;
-}
-.feedback-thumb.active {
-  opacity: 1;
-}
-.feedback-thumb.up.active {
-  border-color: var(--good);
-  background: var(--good-soft);
-}
-.feedback-thumb.down.active {
-  border-color: var(--accent);
-  background: var(--danger-soft);
+  background: none;
+  color: var(--accent);
+  font-weight: 600;
 }
 
-/* Only ever shown after a thumbs down, and only until it is sent. */
-.feedback-detail {
-  margin-top: 0.6rem;
-}
-.feedback-detail p {
-  margin: 0 0 0.45rem;
-}
-.feedback-reasons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-}
-.feedback-reason {
-  padding: 0.35rem 0.65rem;
-  border-radius: 999px;
-  font-size: 0.85rem;
-  background: transparent;
-}
-.feedback-reason.active {
-  border-color: var(--accent-2);
-  background: var(--warn-soft);
-}
-.feedback-comment {
-  display: block;
-  width: 100%;
-  margin-top: 0.5rem;
-  padding: 0.5rem;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
-  color: var(--text);
-  resize: vertical;
-}
-.feedback-send {
-  margin-top: 0.5rem;
-}
+/* A previously answered question, offered beside the real answer. */
+.related-answer { border-left: 3px solid var(--accent-2); padding: 2px 0 2px 12px; font-size: 14px; }
+.related-answer summary { cursor: pointer; color: var(--muted); }
+.related-answer p { margin: 6px 0; }
 
-/* Rendered answers are real HTML now, so they must NOT inherit .message's
-   `white-space: pre-wrap`. With it, every newline between generated block tags
-   became a visible blank line on top of each block's own margin - answers
-   rendered two to three times taller than their content, which is what made
-   the transcript so tiring to scroll. User messages keep pre-wrap, because
-   there they are the only thing preserving the typed line breaks. */
-.answer-body {
-  white-space: normal;
+/* ---- Activity trail ---- */
+.activity-log { font-size: 13px; color: var(--muted); }
+.activity-log summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; min-height: 28px; }
+.activity-log summary::-webkit-details-marker { display: none; }
+.activity-log.collapsed summary::before { content: "\25B8"; font-size: 11px; color: var(--faint); }
+.activity-log.collapsed[open] summary::before { content: "\25BE"; }
+.activity-log[open] .activity-item:first-of-type { margin-top: 6px; }
+.activity-item {
+  display: grid;
+  grid-template-columns: 16px 70px minmax(0, 1fr);
+  gap: 6px;
+  padding: 2px 0 2px 2px;
+  border-left: 2px solid var(--line);
+  padding-left: 10px;
 }
-.answer-body p {
-  margin: 0 0 0.55rem;
-}
-.answer-body p:last-child {
-  margin-bottom: 0;
-}
-
-/* Tables: specs and comparisons come back as markdown tables constantly.
-   Wrapped in a scroller so a wide table scrolls itself rather than forcing the
-   whole chat column sideways on a tablet. */
-.table-scroll {
-  overflow-x: auto;
-  margin: 0.5rem 0 0.7rem;
-}
-.answer-body table {
-  border-collapse: collapse;
-  width: 100%;
-  font-size: 0.9rem;
-}
-.answer-body th,
-.answer-body td {
-  border: 1px solid var(--line);
-  padding: 0.35rem 0.55rem;
-  text-align: left;
-  vertical-align: top;
-}
-.answer-body th {
-  background: var(--panel-2);
-  font-weight: 650;
-  white-space: nowrap;
-}
-
-.activity-log.live > summary {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  cursor: pointer;
-  list-style: none;
-  min-height: 34px;
-}
-
-.activity-log.live > summary::-webkit-details-marker { display: none; }
-
-.activity-heartbeat {
-  color: var(--muted);
-  font-size: 14px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.activity-heartbeat strong { color: var(--text); }
-
+.activity-item.done { color: var(--faint); }
+.activity-label { font-weight: 600; }
+.activity-item.reasoning .activity-text { font-style: italic; white-space: pre-wrap; }
+.activity-tick { color: var(--good); }
+.activity-dot { width: 8px; height: 8px; margin-top: 6px; border-radius: 50%; background: var(--accent-2); animation: pulse 1.2s ease-in-out infinite; }
+.activity-heartbeat { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@keyframes pulse { 50% { opacity: 0.3; } }
 .activity-spinner {
   flex-shrink: 0;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   border: 2px solid var(--line);
   border-top-color: var(--accent-2);
   border-radius: 50%;
   animation: spin 0.9s linear infinite;
 }
+@keyframes spin { to { transform: rotate(360deg); } }
+/* No prefers-reduced-motion override on the spinner, deliberately: locked-down
+   Windows PCs often run with "animation effects" off, which reports
+   reduced-motion and would freeze the one indicator that work is happening. */
+.activity-draft { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.activity-draft-label { display: block; font-size: 12px; color: var(--faint); margin-bottom: 6px; }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
+/* ---- Feedback ---- */
+.answer-feedback { border-top: 1px solid var(--hairline); padding-top: 6px; }
+.feedback-row { display: flex; align-items: center; gap: 4px; }
+.feedback-row .muted { margin-right: 6px; }
+.feedback-thumb { background: none; border: 0; min-width: var(--tap); min-height: var(--tap); border-radius: 10px; color: var(--muted); display: inline-grid; place-items: center; }
+.feedback-thumb:hover { background: var(--surface); }
+.feedback-thumb.active { color: var(--accent); background: var(--surface-2); }
+.feedback-thumb.down.active { color: var(--danger); }
+.feedback-detail { display: grid; gap: 8px; margin-top: 6px; }
+.feedback-detail p { margin: 0; }
+.feedback-reasons { display: flex; flex-wrap: wrap; gap: 6px; }
+.feedback-reason { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 4px 12px; min-height: 36px; font-size: 13px; }
+.feedback-reason.active { border-color: var(--accent); color: var(--accent); background: var(--surface-2); }
+.feedback-comment { border: 1px solid var(--line); border-radius: 8px; padding: 8px; background: var(--panel); resize: vertical; }
+.feedback-send { justify-self: start; border: 1px solid var(--line); border-radius: 8px; background: none; min-height: 36px; padding: 0 16px; }
 
-/* No prefers-reduced-motion override here, deliberately: locked-down Windows PCs
-   often run with "animation effects" off, which reports reduced-motion and froze
-   this spinner for every user it exists for. A 16px rotation is the working
-   indicator, not decoration. */
-
-.activity-draft {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px dashed var(--line);
-}
-
-.activity-draft-label {
-  display: block;
-  font-size: 12.5px;
+/* ---- Source viewer ---- */
+.panel { border-left: 1px solid var(--line); background: var(--surface); display: flex; flex-direction: column; min-height: 0; }
+@media (max-width: 1099px) { .panel { position: fixed; inset: 0; z-index: 20; border: 0; } }
+.panel-head { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.panel-tab {
+  border: 1px solid transparent;
+  background: none;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 13px;
+  white-space: nowrap;
   color: var(--muted);
-  margin-bottom: 6px;
+  min-height: 36px;
+}
+.panel-tab.on { border-color: var(--line); background: var(--panel); color: var(--text); font-weight: 600; }
+.panel-body { flex: 1; overflow: auto; padding: 12px; display: flex; justify-content: center; align-items: flex-start; }
+.panel-body img {
+  width: 100%;
+  max-width: 900px;
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  background: #fff;
+  touch-action: pinch-zoom;
+}
+.page-text {
+  width: 100%;
+  max-width: 900px;
+  margin: 0;
+  white-space: pre-wrap;
+  font-size: 13px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 14px;
+}
+.panel-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--muted);
 }
