@@ -191,7 +191,7 @@ function topBar({ eyebrow = "", title, back = false, actions = "" }) {
   const user = state.currentUser;
   return `
     <header class="top">
-      ${back ? `<button class="iconbtn" id="top-back" aria-label="Back">${icon("back", 20)}</button>` : `<div class="mark">IMM</div>`}
+      ${back ? `<button class="iconbtn" id="top-back" aria-label="Back">${icon("back", 20)}</button>` : `<div class="mark">RAG</div>`}
       <div class="title">
         ${eyebrow ? `<small>${escapeHtml(eyebrow)}</small>` : ""}
         <b>${escapeHtml(title)}</b>
@@ -284,7 +284,7 @@ function renderMachineSelector() {
   // The landing page enforces machine choice before chat is available.
   app.innerHTML = `
     <div class="shell">
-      ${topBar({ title: "IMM Troubleshooting Assistant" })}
+      ${topBar({ title: "Scoped RAG Assistant" })}
       <main class="start">
         <div class="start-inner">
           <h1 class="start-title">Which machine are we working with?</h1>

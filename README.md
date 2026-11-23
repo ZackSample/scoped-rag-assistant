@@ -1,12 +1,30 @@
-# IMM Troubleshooting Assistant
+# Scoped RAG Assistant
 
-A chat assistant for injection molding machine (IMM) technicians. Pick a
-machine, ask a question, and get an answer grounded in that machine's own
-manuals, with every claim cited back to a page you can open beside the chat.
+A retrieval-augmented chat assistant that answers from your own documents,
+scoped to one asset at a time. Pick an asset, ask a question, and get an answer
+grounded in that asset's documents, with every claim cited back to a page you
+can open beside the chat.
+
+It was designed as a troubleshooting assistant for injection molding machine
+(IMM) technicians, and the sample setup and wording still reflect that: the
+assets are machines and the documents are their manuals. Nothing in the design
+is specific to molding, though. Swap the folders for products, sites, vehicles,
+customers or any other unit that has its own documents, and the same scoped
+search, citations and page viewer apply.
 
 This is a trimmed-down reference version of a project I built during an
 internship. Company-specific data, integrations and deployment pieces have been
 removed. What remains is the core of the app and the minimum it needs to run.
+
+## Using it for another domain
+
+- Put each asset's documents in its own folder under `data/documents/`, and
+  anything shared by all assets in `_general/`.
+- Folder names are parsed in `app/machines/registry.py`; change the pattern
+  there to fit your naming.
+- Curated identity facts go in `app/machines/machine_facts.json`.
+- The domain wording lives in the answering prompts under `app/rag/` and the
+  starter questions in `web/app.js`.
 
 ## How it works
 
@@ -29,8 +47,13 @@ removed. What remains is the core of the app and the minimum it needs to run.
   (number, model, curated facts from `app/machines/machine_facts.json`) so it
   can pick the right row out of tables that cover a whole product line.
 - **Streaming UI.** Progress, the model's reasoning summary and the answer
-  stream to the browser over SSE. Citations open a page preview, and full
-  answers come with a short summary and a "More detail" toggle.
+  stream to the browser over SSE. Answers carry numbered citation chips and
+  source cards with page thumbnails, and full answers come with a short summary
+  and a "More detail" toggle.
+- **Source viewer.** A citation opens the document beside the chat (full screen
+  on a tablet) at the cited page, with a tab per source, Prev/Next and arrow
+  keys to page through it, and a button to open it in a new tab at the current
+  page.
 - **Small extras.** Login with PBKDF2-hashed passwords and rate limiting, chat
   history per machine, thumbs up/down feedback, and a hint when a similar
   question was answered before.
@@ -82,7 +105,7 @@ uvicorn app.main:app --port 8000
 
 Open http://localhost:8000/ and sign in with the printed password.
 
-Or with Docker: `docker build -t imm-assistant .` and run it with the same
+Or with Docker: `docker build -t scoped-rag-assistant .` and run it with the same
 environment variables and `data/` mounted at `/app/data`.
 
 ## Tests

@@ -48,7 +48,7 @@ def _session_secret() -> str:
     return secrets.token_urlsafe(32)
 
 
-app = FastAPI(title="IMM Troubleshooting Assistant", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="Scoped RAG Assistant", version="0.2.0", lifespan=lifespan)
 
 # Middleware order matters and is the reverse of what it reads like: Starlette
 # runs the LAST-added middleware first, so SessionMiddleware must be added after
